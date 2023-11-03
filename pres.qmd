@@ -1,0 +1,334 @@
+---
+title: "[Birds of a Feather Flock Together]{.darkcyan}"
+subtitle: "`r emo::ji('construction')`Entity Networks in the UN General Assembly`r emo::ji('construction')`"
+date: today
+author:
+  - name: Vilde Lunnan Djuve
+    affiliation: University of Oslo
+    email: v.l.djuve@stv.uio.no
+  - name: Martin Søyland
+    affiliation: University of Oslo
+    email: martin.soyland@stv.uio.no
+format: 
+  revealjs:
+    transition: zoom
+    transition-speed: slow
+    incremental: true
+    theme: [serif, style.scss]
+bibliography: "../../refbib.bib"
+engine: knitr
+# self-contained: true
+editor_options: 
+  chunk_output_type: console
+---
+
+
+# Disposition { .smaller }
+
+```{r}
+#| label: setup
+#| echo: false
+#| warning: false
+#| message: false
+
+library(kableExtra)
+library(tidyverse)
+
+source("theme_stv2022.R")
+```
+
+
+1. UNGA and UNGD
+    a. [UNGD]{.midgreen} as a legislative arena 
+    b. Democracy in [UNGA]{.purple}
+    c. State interaction in [UNGD]{.midgreen}
+2. The [UNGDC]{.orange}
+3. [NER]{.darkcyan} (it's not a LLM) and [V-DEM]{.darkred} 
+4. [Network]{.lightgreen} descriptives
+5. [Exponential Random Graph Model]{.purple} aka the results
+
+# Our contribution
+
+> In the UNGD, we find a shift from optimism about the fruits of democracy to 
+> democratic imposition from the 1980s and onwards
+
+
+## The UN General Debates as a legislative arena {.smaller}
+
+:::: {.columns}
+
+::: {.column}
+
+- UN General Assembly
+    - main policy-making organ the UN
+    - equal vote for all members
+    - appoints Secretary-General
+    - elects non-permanent members to the Security council
+    - ...
+:::
+
+
+::: {.column}
+
+::: {.r-stack}
+
+![](rop.png){fig-align="center" width=75% .fragment .r-stretch .current-visible}
+
+![](ungd_order.png){fig-align="center" width=90% .fragment .r-stretch}
+
+:::
+
+:::
+
+::::
+
+## Democracy in UNGA {.smaller data-background="https://is4-ssl.mzstatic.com/image/thumb/Purple49/v4/37/7c/1a/377c1a92-1ab4-491d-beff-98fd1f849621/source/512x512bb.jpg" data-background-size=30% data-background-position="70% 70%"}
+
+- "To save succeeding generations from the scourge of war" (UN Charter) `r emo::ji("scroll")`
+- Democratic peace
+- Institutional democratic principals
+    - sovereign equality (size, wealth, etc.)
+    - majority rule (equal vote)
+    - universal participation
+    - transparency
+    - ...
+- UNGA as a driver for democracy?
+
+
+## Interactions between states
+
+- From `r emo::ji("red_circle")`bipolarity`r emo::ji("us")` to ...
+- Unipolarity `r emo::ji("us")`
+    - The unipole builds *ad hoc* coalitions of the willing [@Walt2008]
+    - Liberal economic countries [@Kentikelenis2021]
+        - from insider-outsider conflict ...
+        - to insider contestation
+
+# Data
+
+## UN General Debate Corpus { .smaller }
+
+- *Words to Unite Nations: The Complete UN General Debate Corpus, 1946-Present* [@Jankin2023]
+- Over 10 000 speeches and 548 unique "countries"
+    - 237 countries matches with the `countrycode` package [@cc20018]
+- Avg. #tokens pr. speech: 2 969
+- Avg. #tokens pr. year: 407 527
+- Total tokens (1946-2022): 31 379 537
+- Total entity mentions: 466 240
+
+---
+
+::: {layout="[[-1], [1], [-1]]"}
+
+![](nor_tokens.png){fig-align="center"}
+
+:::
+
+## Text to entities {.smaller data-background=major.jpg data-background-size=20% data-background-position="left"}
+
+
+. . .
+
+:::: { .columns }
+
+
+::: { .column width=50%}
+
+```{r}
+ 
+readLines("../../../UN General Debate Corpus/UNGDC_1946-2022/Session 44 - 1989/GBR_44_1989.txt") |> 
+  kable(col.names = "Sir John Mayor (United Kingdom, UNGD 1989)") |> 
+  kable_styling(font_size = 8) |> 
+  column_spec(1, background = "#F0F1EB")
+
+```
+
+:::
+
+::: { .column width=50% .fragment}
+
+[`spacyr` Named Entity Recognition [@Benoit2023]]{.smalltext}
+
+```{r}
+
+read.csv("../../data/parsed_speeches/GBR_44_1989.csv")[c(31:52), c("token_id", "token", "entity")] |> 
+  kable() |> 
+  kable_styling(font_size = 14) |> 
+  row_spec(15, background = "#C3F0AD") |> 
+  row_spec(18, background = "#F2D5D1")
+
+
+```
+
+:::
+
+::::
+
+## Text to entities
+
+:::: {.columns}
+
+::: {.column}
+
+```{r}
+
+load("../../data/cntry_dyads.rda")
+
+all_gpe |>
+  filter(send_country == "GBR" & year == "1989") |> 
+  filter(send_country != target_country) |> 
+  arrange(desc(count)) |> 
+  kable() |> 
+  kable_styling(font_size = 16)
+
+```
+
+:::
+
+::: {.column}
+
+```{r}
+#| label: ent_to_net
+#| message: false
+#| fig-height: 5
+#| fig-width: 5
+gbr1989 <- all_gpe |>
+  filter(send_country == "GBR" & year == "1989") |> 
+  filter(send_country != target_country) |> 
+  filter(is.na(target_country) == FALSE) |> 
+  select(send_country, target_country, count)
+
+
+library(igraph)
+library(ggraph)
+
+gr <- graph_from_data_frame(gbr1989) 
+
+V(gr)$count <- c(0, gbr1989$count)
+
+
+gr |> 
+  ggraph(layout = "fr") +
+  geom_edge_arc(strength = 0.1, alpha = .01, width = 1) +
+  geom_node_point(aes(color = ifelse(name == "GBR", "GBR", "Other"), 
+                  size = count)) +
+  geom_node_text(aes(label = name), repel = TRUE) +
+  scale_color_manual(values = c("darkblue", "darkred"), guide = "none") + 
+  scale_size(guide = "none") +
+  theme_stv2022() +
+  theme(axis.line = element_blank(),
+        panel.grid.major.y = element_blank())
+
+
+```
+
+:::
+
+::::
+
+## Entities to network {.smaller}
+
+::: {.r-stack}
+
+![](network1946.png){width=50% .fragment .r-stretch .current-visible}
+
+![](network1956.png){width=50% .fragment .r-stretch .current-visible}
+
+![](network1966.png){width=50% .fragment .r-stretch .current-visible}
+
+![](network1976.png){width=50% .fragment .r-stretch .current-visible}
+
+![](network1986.png){width=50% .fragment .r-stretch .current-visible}
+
+![](network1996.png){width=50% .fragment .r-stretch .current-visible}
+
+![](network2006.png){width=50% .fragment .r-stretch .current-visible}
+
+![](network2016.png){width=50% .fragment .r-stretch .current-visible}
+
+:::
+
+
+## Senders and targets
+
+
+::: {.r-stack}
+
+![](map_senders.png){width=90% .fragment .r-stretch .current-visible}
+
+![](map_targets.png){width=90% .fragment .r-stretch .current-visible}
+
+:::
+
+## V-DEM
+
+
+![](poly_trend.png)
+
+
+## Polyarchy difference
+
+![](poly_diff_trend.png)
+
+
+# ERGM {.smaller}
+
+</br>
+
+```{r}
+#| results: asis
+#| echo: false
+#| message: false
+#| output: false
+sapply(list.files("../../data", pattern = "regs[0-9]+.rda", full.names = TRUE), \(x){
+  
+  load(x)
+  
+  assign(str_c(
+    "reg",
+    str_extract(x, "[0-9]+")
+  ), poly_reg3, envir = .GlobalEnv)
+  
+  
+})
+
+```
+
+::: {style="font-size: 75%;"}
+
+```{r}
+#| results: asis
+#| echo: false
+#| message: false
+library(texreg)
+
+regs <- lapply(ls(pattern = "^reg"), get)
+
+regs <- lapply(regs, texreg::extract, include.aic = FALSE, include.bic = FALSE, include.loglik = FALSE)
+
+tab <- htmlreg(regs,
+               caption = "ERGM models",
+               custom.coef.names = c("Nonzero", "Poly. edge diff.",
+                                     "Poly. node",
+                                     "Continent",
+                                     "Mutual min."),
+               reorder.coef = c(2, 3, 4, 5, 1),
+               no.margin = TRUE,
+               single.row = TRUE,
+               custom.model.names = as.character(c(seq(1946, 2016, 10), 2022)))
+tab
+```
+
+:::
+
+
+# To do!
+
+1. Control for friendliness (e.g CoW)
+2. Temporal ERGM
+3. Geographical distance (replace continent)
+
+# References
+
+:::{#refs}
+:::
